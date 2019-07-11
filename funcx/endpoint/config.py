@@ -61,8 +61,8 @@ def _get_parsl_config():
                     nodes_per_block=1,
                     init_blocks=1,
                     max_blocks=100,
-                    worker_init="""pip install git+https://github.com/Parsl/parsl;
-                                pip install git+https://github.com/funcx-faas/funcX;""",
+                    #worker_init="""pip install git+https://github.com/Parsl/parsl;
+                    #            pip install git+https://github.com/funcx-faas/funcX;""",
                     #security=None,
                     secret="ryan-kube-secret",
                     pod_name='funcx-worker-container',
