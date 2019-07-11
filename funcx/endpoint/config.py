@@ -50,7 +50,7 @@ def _get_parsl_config():
     config = Config(
         executors=[
             HighThroughputExecutor(
-                label="htex_kube",
+                label="htex_local",
                 cores_per_worker=1,
                 max_workers=1,
                 worker_logdir_root='runinfo',
