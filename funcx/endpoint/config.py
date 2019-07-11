@@ -50,20 +50,30 @@ def _get_parsl_config():
     config = Config(
         executors=[
             HighThroughputExecutor(
-                label="htex_local",
-                worker_debug=False,
-                poll_period=1,
+                label="htex_kube",
                 cores_per_worker=1,
                 max_workers=1,
-                provider=LocalProvider(
-                    channel=LocalChannel(),
+                worker_logdir_root='runinfo',
+                address=address_by_route(),
+                provider=KubernetesProvider(
+                    namespace="dlhub-privileged",
+                    image='039706667969.dkr.ecr.us-east-1.amazonaws.com/funcx_endpoint',
+                    nodes_per_block=1,
                     init_blocks=1,
-                    max_blocks=1,
-                    min_blocks=1,
+                    max_blocks=100,
+                    worker_init="""pip install git+https://github.com/Parsl/parsl;
+                                pip install git+https://github.com/funcx-faas/funcX;""",
+                    #security=None,
+                    secret="ryan-kube-secret",
+                    pod_name='funcx-worker-container',
+                    #secret="minikube-aws-ecr",
+                    #user_id=32781,
+                    #group_id=10253,
+                    #run_as_non_root=True
                 ),
             )
         ],
-        strategy=None
+        strategy='simple',
     )
     return config
 
