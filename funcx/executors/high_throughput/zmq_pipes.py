@@ -24,21 +24,40 @@ class CommandClient(object):
         """
         self.context = zmq.Context()
         self.zmq_socket = self.context.socket(zmq.REQ)
+        self.zmq_socket.setsockopt(zmq.LINGER, 0)
         self.port = self.zmq_socket.bind_to_random_port("tcp://{}".format(ip_address),
                                                         min_port=port_range[0],
                                                         max_port=port_range[1])
 
-    def run(self, message):
+    def run(self, message, timeout=-1):
         """ This function needs to be fast at the same time aware of the possibility of
         ZMQ pipes overflowing.
 
+        Parameters
+        ----------
+        timeout : int
+             -1 = wait forever, else wait timeout seconds for result
+             
         The timeout increases slowly if contention is detected on ZMQ pipes.
         We could set copy=False and get slightly better latency but this results
         in ZMQ sockets reaching a broken state once there are ~10k tasks in flight.
         This issue can be magnified if each the serialized buffer itself is larger.
         """
         self.zmq_socket.send_pyobj(message, copy=True)
-        reply = self.zmq_socket.recv_pyobj()
+        logger.info("Sent message")
+        if timeout == -1:
+            logger.info("Waiting forever")
+            reply = self.zmq_socket.recv_pyobj()
+            logger.info("Received message")
+        else:
+            poller = zmq.Poller()
+            poller.register(self.zmq_socket, zmq.POLLIN)
+            if poller.poll(timeout*1000):
+                reply = self.zmq_socket.recv_pyobj()
+            else:
+                logger.error(f"Heartbeat: Remote side failed to respond in {timeout}s")
+                raise IOError("Timeout executing command")
+            
         return reply
 
     def close(self):

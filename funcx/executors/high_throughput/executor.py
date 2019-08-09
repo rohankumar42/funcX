@@ -497,8 +497,20 @@ class HighThroughputExecutor(ParslExecutor, RepresentationMixin):
         logger.debug("Sent hold request to worker: {}".format(worker_id))
         return c
 
-    def wait_for_endpoint(self):
-        heartbeat = self.command_client.run('HEARTBEAT')
+    def wait_for_endpoint(self, timeout=60):
+        """ Wait for endpoint to connect by using a HEARTBEAT over the command channel
+        Parameters
+        ----------
+        timeout : int
+           Seconds to wait. If -1 will wait indefinitely, else wait timeout seconds 
+           and then retry
+        """
+        while True:
+            try:
+                heartbeat = self.command_client.run('HEARTBEAT', timeout=60)
+            except IOError:
+                logger.debug("HEARTBEAT has timed out.. waiting again")
+                
         logger.debug("Attempting heartbeat to interchange")
         return heartbeat
 
