@@ -560,7 +560,7 @@ class Interchange(object):
 
             # If we had received any requests, check if there are tasks that could be passed
 
-            logger.info("[MAIN] Managers count (total/interesting): {}/{}".format(
+            logger.debug("[MAIN] Managers count (total/interesting): {}/{}".format(
                 len(self._ready_manager_queue),
                 len(interesting_managers)))
 
