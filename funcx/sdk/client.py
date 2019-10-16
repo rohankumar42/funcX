@@ -161,8 +161,13 @@ class FuncXClient(BaseClient):
                 'is_async': asynchronous}
 
         # Send the data to funcX
-        r = self.post(servable_path, json_body=data)
+        try:
+            r = self.post(servable_path, json_body=data)
+        except Exception as e:
+            logger.exception(f"Caught error during POST operation for func:{function_id}")
+
         if r.http_status is not 200:
+            logger.warning("Got exit status:{}".format(r.http_status))
             raise Exception(r)
 
         if 'task_uuid' not in r:
