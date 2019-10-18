@@ -111,7 +111,14 @@ class FuncXWorker(object):
             logger.debug("Executing task...")
 
             try:
+                logger.debug("Testing if here")
                 result = self.execute_task(msg)
+            except Exception as e:
+                logger.exception(f"Caught an exception {e}")
+                result_package = {'task_id': task_id, 'exception': self.serialize(
+                    RemoteExceptionWrapper(*sys.exc_info()))}
+            logger.debug("Finish executing task, serializing")
+            try:
                 serialized_result = self.serialize(result)
             except Exception as e:
                 logger.exception(f"Caught an exception {e}")
@@ -132,13 +139,14 @@ class FuncXWorker(object):
 
         Returns the result or throws exception.
         """
-
+        logger.debug("At 1")
         user_ns = locals()
         user_ns.update({'__builtins__': __builtins__})
-
+        logger.debug("At 2")
         decoded = message.decode()
+        logger.debug("At 3")
         f, args, kwargs = self.serializer.unpack_and_deserialize(decoded)
-
+        logger.debug("At 4")
         return f(*args, **kwargs)
 
 
