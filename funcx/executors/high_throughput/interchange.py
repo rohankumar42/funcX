@@ -249,10 +249,10 @@ class Interchange(object):
             working_dir = "{}/{}".format(self.logdir, "worker_logs")
         logger.info("Setting working_dir: {}".format(working_dir))
 
-        self.config.provider.script_dir = working_dir
-        self.config.provider.channel.script_dir = os.path.join(working_dir, 'submit_scripts')
-        self.config.provider.channel.makedirs(self.config.provider.channel.script_dir, exist_ok=True)
-        os.makedirs(self.config.provider.script_dir, exist_ok=True)
+        #self.config.provider.script_dir = working_dir
+        #self.config.provider.channel.script_dir = os.path.join(working_dir, 'submit_scripts')
+        #self.config.provider.channel.makedirs(self.config.provider.channel.script_dir, exist_ok=True)
+        #os.makedirs(self.config.provider.script_dir, exist_ok=True)
 
         debug_opts = "--debug" if self.config.worker_debug else ""
         max_workers = "" if self.config.max_workers_per_node == float('inf') \
@@ -519,7 +519,7 @@ class Interchange(object):
                         self._ready_manager_queue[manager].update(msg)
                         logger.info("[MAIN] Registration info for manager {}: {}".format(manager, msg))
 
-                        if (msg['python_v'] != self.current_platform['python_v'] or
+                        if (msg['python_v'].rsplit(".", 1)[0] != self.current_platform['python_v'].rsplit(".", 1)[0] or
                             msg['parsl_v'] != self.current_platform['parsl_v']):
                             logger.warn("[MAIN] Manager {} has incompatible version info with the interchange".format(manager))
 
