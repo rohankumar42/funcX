@@ -46,8 +46,8 @@ class FuncXSerializer(object):
     def serialize(self, data, serialization_method=None):
         serialized = None
 
-        if serialization_method == "RAW":
-            return data
+        if serialization_method == "JSON":
+            return json.dumps(data)
 
         if callable(data):
             for method in self.methods_for_code.values():
@@ -82,8 +82,8 @@ class FuncXSerializer(object):
             result = self.methods_for_code[header].deserialize(payload)
         elif header in self.methods_for_data:
             result = self.methods_for_data[header].deserialize(payload)
-        elif serialization_method == "RAW":
-            result = payload
+        elif serialization_method == "JSON":
+            result = json.loads(payload)
         else:
             raise Exception("Invalid header: {} in data payload".format(header))
 
@@ -137,8 +137,8 @@ class FuncXSerializer(object):
             except Exception as e:
                 print("Exception", e)
                 logger.info(f"Exception when unpacking: {e}")
-                if serialization_method == "RAW":
-                    unpacked.extend([[packed_buffer]])
+                if serialization_method == "JSON":
+                    unpacked.extend([[json.loads(packed_buffer)]])
                     unpacked.extend([{}])
                     return unpacked
                 else:
