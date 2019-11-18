@@ -43,9 +43,11 @@ class FuncXSerializer(object):
     def _list_methods(self):
         return self.methods_for_code, self.methods_for_data
 
-
-    def serialize(self, data):
+    def serialize(self, data, serialization_method):
         serialized = None
+
+        if serialization_method == "RAW":
+            return data
 
         if callable(data):
             for method in self.methods_for_code.values():
@@ -66,7 +68,7 @@ class FuncXSerializer(object):
             raise Exception("None of serialization methods were able to serialize {}".format(data))
         return serialized
 
-    def deserialize(self, payload):
+    def deserialize(self, payload, serialization_method):
         """
         Parameters
         ----------
@@ -74,6 +76,9 @@ class FuncXSerializer(object):
            Payload object to be deserialized
 
         """
+        if serialization_method == "RAW":
+            return payload
+
         header = payload[0:self.header_size]
         if header in self.methods_for_code:
             result = self.methods_for_code[header].deserialize(payload)
@@ -113,12 +118,16 @@ class FuncXSerializer(object):
 
         return unpacked
 
-    def unpack_and_deserialize(self, packed_buffer):
+    def unpack_and_deserialize(self, packed_buffer, serialization_method):
         """ Unpacks a packed buffer and returns the deserialized contents
         Parameters
         ----------
         packed_buffers : packed buffer as string
         """
+
+        if serialization_method == "RAW":
+            return packed_buffer
+
         unpacked = []
         while packed_buffer:
             s_length, buf = packed_buffer.split('\n', 1)

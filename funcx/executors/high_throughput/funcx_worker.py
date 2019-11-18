@@ -49,7 +49,6 @@ class FuncXWorker(object):
         self.worker_type = worker_type
         self.serializer = FuncXSerializer()
         self.serialize = self.serializer.serialize
-        self.deserialize = self.serializer.deserialize
 
         global logger
         logger = set_file_logger('{}/funcx_worker_{}.log'.format(logdir, worker_id),
@@ -102,6 +101,17 @@ class FuncXWorker(object):
             logger.debug(
                 "Received task_id:{} with task:{}".format(task_id, msg))
 
+            serialization_method = None
+            container_id = None
+            try:
+                task_split = task_id.split(";")
+                if len(task_split) > 1:
+                    container_id = task_split[1]
+                if len(task_split) > 2:
+                    serialization_method = task_split[2]
+            except Exception as e:
+                logger.error(f"Failed to split task_id:{task_id}. {e}")
+
             if msg == b"KILL":
                 logger.info("[KILL] -- Worker KILL message received! ")
                 task_type = b'WRKR_DIE'
@@ -111,8 +121,8 @@ class FuncXWorker(object):
             logger.debug("Executing task...")
 
             try:
-                result = self.execute_task(msg)
-                serialized_result = self.serialize(result)
+                result = self.execute_task(msg, serialization_method)
+                serialized_result = self.serialize(result, serialization_method)
             except Exception as e:
                 logger.exception(f"Caught an exception {e}")
                 result_package = {'task_id': task_id, 'exception': self.serialize(
@@ -127,7 +137,7 @@ class FuncXWorker(object):
 
         logger.warning("Broke out of the loop... dying")
 
-    def execute_task(self, message):
+    def execute_task(self, message, serialization_method):
         """Deserialize the buffer and execute the task.
 
         Returns the result or throws exception.
@@ -137,7 +147,7 @@ class FuncXWorker(object):
         user_ns.update({'__builtins__': __builtins__})
 
         decoded = message.decode()
-        f, args, kwargs = self.serializer.unpack_and_deserialize(decoded)
+        f, args, kwargs = self.serializer.unpack_and_deserialize(decoded, serialization_method)
 
         return f(*args, **kwargs)
 
