@@ -43,7 +43,7 @@ class FuncXSerializer(object):
     def _list_methods(self):
         return self.methods_for_code, self.methods_for_data
 
-    def serialize(self, data, serialization_method):
+    def serialize(self, data, serialization_method=None):
         serialized = None
 
         if serialization_method == "RAW":
@@ -68,7 +68,7 @@ class FuncXSerializer(object):
             raise Exception("None of serialization methods were able to serialize {}".format(data))
         return serialized
 
-    def deserialize(self, payload, serialization_method):
+    def deserialize(self, payload, serialization_method=None):
         """
         Parameters
         ----------
@@ -76,14 +76,14 @@ class FuncXSerializer(object):
            Payload object to be deserialized
 
         """
-        if serialization_method == "RAW":
-            return payload
 
         header = payload[0:self.header_size]
         if header in self.methods_for_code:
             result = self.methods_for_code[header].deserialize(payload)
         elif header in self.methods_for_data:
             result = self.methods_for_data[header].deserialize(payload)
+        elif serialization_method == "RAW":
+            result = payload
         else:
             raise Exception("Invalid header: {} in data payload".format(header))
 
@@ -118,24 +118,33 @@ class FuncXSerializer(object):
 
         return unpacked
 
-    def unpack_and_deserialize(self, packed_buffer, serialization_method):
+    def unpack_and_deserialize(self, packed_buffer, serialization_method=None):
         """ Unpacks a packed buffer and returns the deserialized contents
         Parameters
         ----------
         packed_buffers : packed buffer as string
         """
 
-        if serialization_method == "RAW":
-            return packed_buffer
-
         unpacked = []
+        logger.info(f"Unpacking {packed_buffer}")
         while packed_buffer:
-            s_length, buf = packed_buffer.split('\n', 1)
-            i_length = int(s_length)
-            current, packed_buffer = buf[:i_length], buf[i_length:]
-            deserialized = self.deserialize(current)
-            unpacked.extend([deserialized])
+            try:
+                s_length, buf = packed_buffer.split('\n', 1)
+                i_length = int(s_length)
+                current, packed_buffer = buf[:i_length], buf[i_length:]
+                deserialized = self.deserialize(current, serialization_method)
+                unpacked.extend([deserialized])
+            except Exception as e:
+                print("Exception", e)
+                logger.info(f"Exception when unpacking: {e}")
+                if serialization_method == "RAW":
+                    unpacked.extend([[packed_buffer]])
+                    unpacked.extend([{}])
+                    return unpacked
+                else:
+                    raise e
 
+        logger.info(f"Unpacked: {unpacked}")
         assert len(unpacked) == 3, "Unpack expects 3 buffers, got {}".format(len(unpacked))
 
         return unpacked

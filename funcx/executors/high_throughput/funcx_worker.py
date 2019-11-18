@@ -112,6 +112,8 @@ class FuncXWorker(object):
             except Exception as e:
                 logger.error(f"Failed to split task_id:{task_id}. {e}")
 
+            logger.info(f"Serialization is of type: {serialization_method}")
+
             if msg == b"KILL":
                 logger.info("[KILL] -- Worker KILL message received! ")
                 task_type = b'WRKR_DIE'
@@ -147,8 +149,9 @@ class FuncXWorker(object):
         user_ns.update({'__builtins__': __builtins__})
 
         decoded = message.decode()
+        logger.info(f"Unpacking decoded message: {decoded}")
         f, args, kwargs = self.serializer.unpack_and_deserialize(decoded, serialization_method)
-
+        logger.info(f"Unpacked: args: {args}, kwargs: {kwargs}")
         return f(*args, **kwargs)
 
 
