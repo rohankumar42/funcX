@@ -50,6 +50,7 @@ class Config(RepresentationMixin):
                  cores_per_worker=1.0,
                  mem_per_worker=None,
                  launch_cmd=None,
+                 caching=False,
                  # Tuning info
                  worker_mode='no_container',
                  prefetch_capacity=10,
@@ -75,6 +76,7 @@ class Config(RepresentationMixin):
         self.cores_per_worker = cores_per_worker
         self.mem_per_worker = mem_per_worker
         self.launch_cmd = None
+        self.caching = caching
 
         # Tuning info
         self.worker_mode = worker_mode

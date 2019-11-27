@@ -232,6 +232,8 @@ class Interchange(object):
                                  'dir': os.getcwd()}
 
         logger.info("Platform info: {}".format(self.current_platform))
+        self.tasks = {}
+        self.task_cache = {}
         self._block_counter = 0
         try:
             self.load_config()
@@ -249,10 +251,10 @@ class Interchange(object):
             working_dir = "{}/{}".format(self.logdir, "worker_logs")
         logger.info("Setting working_dir: {}".format(working_dir))
 
-        self.config.provider.script_dir = working_dir
-        self.config.provider.channel.script_dir = os.path.join(working_dir, 'submit_scripts')
-        self.config.provider.channel.makedirs(self.config.provider.channel.script_dir, exist_ok=True)
-        os.makedirs(self.config.provider.script_dir, exist_ok=True)
+        #self.config.provider.script_dir = working_dir
+        #self.config.provider.channel.script_dir = os.path.join(working_dir, 'submit_scripts')
+        #self.config.provider.channel.makedirs(self.config.provider.channel.script_dir, exist_ok=True)
+        #os.makedirs(self.config.provider.script_dir, exist_ok=True)
 
         debug_opts = "--debug" if self.config.worker_debug else ""
         max_workers = "" if self.config.max_workers_per_node == float('inf') \
@@ -519,7 +521,7 @@ class Interchange(object):
                         self._ready_manager_queue[manager].update(msg)
                         logger.info("[MAIN] Registration info for manager {}: {}".format(manager, msg))
 
-                        if (msg['python_v'] != self.current_platform['python_v'] or
+                        if (msg['python_v'].rsplit(".", 1)[0] != self.current_platform['python_v'].rsplit(".", 1)[0] or
                             msg['parsl_v'] != self.current_platform['parsl_v']):
                             logger.warn("[MAIN] Manager {} has incompatible version info with the interchange".format(manager))
 
@@ -560,9 +562,9 @@ class Interchange(object):
 
             # If we had received any requests, check if there are tasks that could be passed
 
-            logger.info("[MAIN] Managers count (total/interesting): {}/{}".format(
-                len(self._ready_manager_queue),
-                len(interesting_managers)))
+            #logger.info("[MAIN] Managers count (total/interesting): {}/{}".format(
+            #    len(self._ready_manager_queue),
+            #    len(interesting_managers)))
 
             if interesting_managers and not self.pending_task_queue.empty():
                 shuffled_managers = list(interesting_managers)
@@ -573,14 +575,33 @@ class Interchange(object):
                         self._ready_manager_queue[manager]['active']):
                         tasks = self.get_tasks(self._ready_manager_queue[manager]['free_capacity'])
                         if tasks:
-                            self.task_outgoing.send_multipart([manager, b'', pickle.dumps(tasks)])
-                            task_count = len(tasks)
-                            count += task_count
-                            tids = [t['task_id'] for t in tasks]
-                            logger.debug("[MAIN] Sent tasks: {} to {}".format(tids, manager))
-                            self._ready_manager_queue[manager]['free_capacity'] -= task_count
-                            self._ready_manager_queue[manager]['tasks'].extend(tids)
-                            logger.info("[MAIN] Sent tasks: {} to manager {}".format(tids, manager))
+                            new_task_list = []
+                            cached_task_list = []
+                            for task_blob in tasks:
+                                logger.info("Got task blob {}".format(task_blob))
+                                self.tasks[task_blob['task_id']] = task_blob['buffer']
+                                if self.config.caching and task_blob['buffer'] in self.task_cache:
+                                   # return result directly
+                                   cached_task = {}
+                                   cached_task['task_id'] = task_blob['task_id']
+                                   cached_task['result'] = self.task_cache[task_blob['buffer']] 
+                                   logger.info("[MAIN] Found task {} in cache, sending result back.".format(task_blob['task_id']))
+                                   logger.info("[MAIN] Adding task to cache list {}".format(cached_task))
+                                   cached_task_list.append(pickle.dumps(cached_task))
+                                else:
+                                   new_task_list.append(task_blob) 
+                            if self.config.caching and len(cached_task_list) > 0:
+                                logger.info("[MAIN] Sending task results using caching")
+                                self.results_outgoing.send_multipart(cached_task_list)
+                            if len(new_task_list) > 0:
+                                self.task_outgoing.send_multipart([manager, b'', pickle.dumps(new_task_list)])
+                                task_count = len(new_task_list)
+                                count += task_count
+                                tids = [t['task_id'] for t in new_task_list]
+                                logger.info("[MAIN] The task blob is {}".format(new_task_list[0]))
+                                logger.info("[MAIN] Sent tasks: {} to {}".format(tids, manager))
+                                self._ready_manager_queue[manager]['free_capacity'] -= task_count
+                                self._ready_manager_queue[manager]['tasks'].extend(tids)
                             if self._ready_manager_queue[manager]['free_capacity'] > 0:
                                 logger.info("[MAIN] Manager {} still has free_capacity {}".format(manager, self._ready_manager_queue[manager]['free_capacity']))
                                 # ... so keep it in the interesting_managers list
@@ -604,8 +625,11 @@ class Interchange(object):
                     logger.warning("[MAIN] Received a result from a un-registered manager: {}".format(manager))
                 else:
                     logger.debug("[MAIN] Got {} result items in batch".format(len(b_messages)))
+                    logger.info("[MAIN] Got result blobs {}".format(b_messages))
                     for b_message in b_messages:
                         r = pickle.loads(b_message)
+                        logger.info("[MAIN] Got the result blob {}".format(r))
+                        self.task_cache[self.tasks[r['task_id']]] = r['result']
                         # logger.debug("[MAIN] Received result for task {} from {}".format(r['task_id'], manager))
                         self._ready_manager_queue[manager]['tasks'].remove(r['task_id'])
                     self.results_outgoing.send_multipart(b_messages)
