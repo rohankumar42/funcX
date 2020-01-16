@@ -20,6 +20,7 @@ import tarfile
 import signal
 import psutil
 import random
+import importlib.machinery
 
 import funcx
 from funcx.executors.high_throughput import global_config, default_config
@@ -155,6 +156,7 @@ def register_with_hub(address, redis_host='funcx-redis.wtgh6h.0001.use1.cache.am
 
     return r.json()
 
+
 def configure_endpoint(args, config_file=None, global_config=None):
     """Configure an endpoint
 
@@ -216,6 +218,7 @@ def start_endpoint(args, global_config=None):
        Global config dict
     """
 
+    funcx_client = FuncXClient()
 
     endpoint_dir = os.path.join(args.config_dir, args.name)
     endpoint_json = os.path.join(endpoint_dir, 'endpoint.json')
@@ -234,46 +237,19 @@ def start_endpoint(args, global_config=None):
         with open(endpoint_json, 'r') as fp:
             logger.debug("Connection info loaded from prior registration record")
             reg_info = json.load(fp)
+            endpoint_uuid = reg_info['endpoint_id']
+    elif args.endpoint_uuid:
+        endpoint_uuid = args.endpoint_uuid
     else:
-        logger.debug("Endpoint prior connection record not available. Attempting registration")
+        endpoint_uuid = str(uuid.uuid4())
 
-        if global_config.get('broker_test', False) is True:
-            logger.warning("**************** BROKER DEBUG MODE *******************")
-            reg_info = register_with_hub(global_config['broker_address'],
-                                         global_config['redis_host'])
-        else:
-            funcx_client = FuncXClient()
 
-            logger.debug("Attempting registration")
-            eid = str(uuid.uuid4())
-            logger.debug(f"Trying with eid : {eid}")
-            reg_info = funcx_client.register_endpoint(args.name, eid)
+    print(f"Starting endpoint with uuid: {endpoint_uuid}")
+    logger.debug(f"Starting endpoint with uuid: {endpoint_uuid}")
 
-        logger.info("Endpoint registered with UUID: {}".format(reg_info['endpoint_id']))
-        with open(os.path.join(endpoint_dir, 'endpoint.json'), 'w+') as fp:
-            json.dump(reg_info, fp)
-            logger.debug("Registration info written to {}/endpoint.json".format(endpoint_dir))
-
-    optionals = {}
-    optionals['client_address'] = reg_info['address']
-    optionals['client_ports'] = reg_info['client_ports'].split(',')
-    if 'endpoint_address' in global_config:
-        optionals['interchange_address'] = global_config['endpoint_address']
-
-    optionals['logdir'] = endpoint_dir
-    # optionals['debug'] = True
-
-    if args.debug:
-        optionals['logging_level'] = logging.DEBUG
-
-    import importlib.machinery
-    endpoint_config = importlib.machinery.SourceFileLoader(
-        'config',
-        os.path.join(endpoint_dir,'config.py')).load_module()
-    # TODO : we need to load the config ? maybe not. This needs testing
-
-    stdout = open('./interchange.stdout', 'w+')
-    stderr = open('./interchange.stderr', 'w+')
+    # Create a daemon context
+    stdout = open(os.path.join(endpoint_dir, './interchange.stdout'), 'w+')
+    stderr = open(os.path.join(endpoint_dir, './interchange.stderr'), 'w+')
     try:
         context = daemon.DaemonContext(working_directory=endpoint_dir,
                                        umask=0o002,
@@ -282,22 +258,85 @@ def start_endpoint(args, global_config=None):
                                                                                        'daemon.pid')),
                                        stdout=stdout,
                                        stderr=stderr,
-
         )
     except Exception as e:
-        print("Caught exception while trying to setup endpoint context dirs")
-        print("Exception : ", e)
+        logger.critical("Caught exception while trying to setup endpoint context dirs")
+        logger.critical("Exception : ", e)
 
     check_pidfile(context.pidfile.path, "funcx-endpoint", args.name)
 
+    # TODO : we need to load the config ? maybe not. This needs testing
+    endpoint_config = importlib.machinery.SourceFileLoader(
+        'config',
+        os.path.join(endpoint_dir, 'config.py')).load_module()
+
     with context:
-        ic = Interchange(endpoint_config.config, **optionals)
-        ic.start()
+        while True:
+            # Register the endpoint
+            logger.debug("Registering endpoint")
+            if global_config.get('broker_test', False) is True:
+                logger.warning("**************** BROKER DEBUG MODE *******************")
+                reg_info = register_with_hub(global_config['broker_address'],
+                                             global_config['redis_host'])
+            else:
+                reg_info = register_endpoint(funcx_client, args.name, endpoint_uuid, endpoint_dir)
+
+            logger.info("Endpoint registered with UUID: {}".format(reg_info['endpoint_id']))
+
+            # Configure the parameters for the interchange
+            optionals = {}
+            optionals['client_address'] = reg_info['address']
+            optionals['client_ports'] = reg_info['client_ports'].split(',')
+            if 'endpoint_address' in global_config:
+                optionals['interchange_address'] = global_config['endpoint_address']
+
+            optionals['logdir'] = endpoint_dir
+            # optionals['debug'] = True
+
+            if args.debug:
+                optionals['logging_level'] = logging.DEBUG
+
+            ic = Interchange(endpoint_config.config, **optionals)
+            ic.start()
+            ic.stop()
+
+            logger.critical("Interchange terminated.")
+            time.sleep(10)
 
     stdout.close()
     stderr.close()
 
-    print("Done")
+    logger.critical(f"Shutting down endpoint {endpoint_uuid}")
+
+
+def register_endpoint(funcx_client, endpoint_name, endpoint_uuid, endpoint_dir):
+    """Register the endpoint and return the registration info.
+
+    Parameters
+    ----------
+
+    funcx_client : FuncXClient
+        The auth'd client to communicate with the funcX service
+
+    endpoint_name : str
+        The name to register the endpoint with
+
+    endpoint_uuid : str
+        The uuid to register the endpoint with
+
+    endpoint_dir : str
+        The directory to write endpoint registration info into.
+
+    """
+    logger.debug("Attempting registration")
+    logger.debug(f"Trying with eid : {endpoint_uuid}")
+    reg_info = funcx_client.register_endpoint(endpoint_name, endpoint_uuid)
+
+    with open(os.path.join(endpoint_dir, 'endpoint.json'), 'w+') as fp:
+        json.dump(reg_info, fp)
+        logger.debug("Registration info written to {}/endpoint.json".format(endpoint_dir))
+
+    return reg_info
 
 
 def stop_endpoint(args, global_config=None):
@@ -322,6 +361,8 @@ def stop_endpoint(args, global_config=None):
         # Attempt terminating
         try:
             logger.debug("Signalling process: {}".format(pid))
+            os.kill(pid, signal.SIGTERM)
+            time.sleep(0.1)
             os.kill(pid, signal.SIGKILL)
             time.sleep(0.1)
             # Wait to confirm that the pid file disappears
@@ -335,10 +376,6 @@ def stop_endpoint(args, global_config=None):
             sys.exit(-1)
     else:
         logger.info("Endpoint <{}> is not active.".format(args.name))
-
-
-def register_endpoint(args):
-    print("Register args : ", args)
 
 
 def cli_run():
@@ -371,6 +408,8 @@ def cli_run():
     start = subparsers.add_parser('start',
                                   help='Starts an endpoint')
     start.add_argument("name", help="Name of the endpoint to start")
+    start.add_argument("--endpoint_uuid", help="The UUID for the endpoint to register with",
+                       default=None, required=False)
 
     # Stop an endpoint
     stop = subparsers.add_parser('stop', help='Stops an active endpoint')
