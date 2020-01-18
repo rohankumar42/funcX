@@ -64,7 +64,7 @@ class Manager(object):
                  mode="no_container",
                  container_image=None,
                  # TODO : This should be 10ms
-                 poll_period=100):
+                 poll_period=10):
         """
         Parameters
         ----------
@@ -393,7 +393,8 @@ class Manager(object):
 
         logger.debug("[RESULT_PUSH_THREAD] Starting thread")
 
-        push_poll_period = max(10, self.poll_period) / 1000    # push_poll_period must be atleast 10 ms
+        # push_poll_period = max(10, self.poll_period) / 1000    # push_poll_period must be atleast 10 ms
+        push_poll_period = 0.001
         logger.debug("[RESULT_PUSH_THREAD] push poll period: {}".format(push_poll_period))
 
         last_beat = time.time()
