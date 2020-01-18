@@ -183,9 +183,6 @@ class WorkerMap(object):
         modded_cmd = f'singularity exec -H /home/ --writable {container_uri} {cmd}'
         logger.info("Command string :\n {}".format(modded_cmd))
 
-        modded_cmd = f'singularity exec --writable {container_uri} {cmd}'
-        logger.info("Command string :\n {}".format(modded_cmd))
-
         try:
             proc = subprocess.Popen(modded_cmd.split(),
                                     stdout=subprocess.PIPE,
