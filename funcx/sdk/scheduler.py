@@ -5,7 +5,7 @@ from threading import Thread
 from funcx.sdk.client import FuncXClient
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
 logger.addHandler(ch)
 
@@ -27,7 +27,7 @@ class FuncXScheduler:
         self._results = {}
 
         # Start a thread to wait for results and record runtimes
-        self._watchdog_sleep_time = 0.5  # in seconds
+        self._watchdog_sleep_time = 0.1  # in seconds
         self._watchdog_thread = Thread(target=self._wait_for_results)
         self._watchdog_thread.start()
 
@@ -36,6 +36,11 @@ class FuncXScheduler:
 
     def remove_endpoiint(self, endpoint_id):
         self._endpoints.discard(endpoint_id)
+
+    def register_function(self, function, *args, **kwargs):
+        return NotImplemented
+        # wrapped_function = time_function(function)
+        # return self._fxc.register_function(wrapped_function, *args, **kwargs)
 
     def run(self, *args, function_id=None, asynchronous=False, **kwargs):
         endpoint_id = self._choose_best_endpoint(*args,
@@ -79,6 +84,8 @@ class FuncXScheduler:
 
     def _wait_for_results(self):
 
+        logger.info('[WATCHDOG] Thread started')
+
         while True:
             to_delete = set()
             # Convert to list first because otherwise, the dict may throw an
@@ -89,14 +96,15 @@ class FuncXScheduler:
                     res = self._fxc.get_result(task_id)
                 except Exception as e:
                     if not str(e).startswith("Task pending"):
-                        logger.warn('Got unexpected exception:\t{}'.format(e))
+                        logger.warn('[WATCHDOG] Got unexpected exception:\t{}'
+                                    .format(e))
                         raise
                     continue
 
-                logger.debug('[WATCHDOG] Got result for task {}'
-                             .format(task_id))
-                self._update_average(task_id)
-                self._results[task_id] = res
+                logger.debug('[WATCHDOG] Got result for task {} with runtime {}'
+                             .format(task_id, res['runtime']))
+                self._update_average(task_id, new_time=res['runtime'])
+                self._results[task_id] = res['result']
                 to_delete.add(task_id)
 
                 # Sleep, to prevent being throttled
@@ -105,9 +113,8 @@ class FuncXScheduler:
             for task_id in to_delete:
                 del self._pending_tasks[task_id]
 
-    def _update_average(self, task_id):
+    def _update_average(self, task_id, new_time):
         info = self._pending_tasks[task_id]
-        new_time = time.time() - info['time_sent']
         function_id = info['function_id']
         endpoint_id = info['endpoint_id']
 
@@ -119,24 +126,29 @@ class FuncXScheduler:
 
 
 def funcx_sum(items):
-    return sum(items)
+    import time
+    start = time.time()
+    result = sum(items)
+    return {'result': result, 'runtime': time.time() - start}
 
 
 if __name__ == "__main__":
-    fxc = FuncXClient()
-    func_uuid = fxc.register_function(funcx_sum,
-                                      description="A sum function")
-    payload = [1, 2, 3, 4, 66]
 
     endpoints = [
         # add your own funcx endpoints
+        '4b116d3c-1703-4f8f-9f6f-39921e5864df',  # public tutorial endpoint
     ]
 
+    fxc = FuncXClient()
     sched = FuncXScheduler(fxc, endpoints=endpoints)
+    func_uuid = fxc.register_function(funcx_sum, description="Summer")
+    payload = [2, 34]
 
     task_ids = []
-    for i in range(10):
-        task_ids.append(sched.run(payload, function_id=func_uuid))
+    for i in range(1):
+        task_id = sched.run(payload, function_id=func_uuid)
+        task_ids.append(task_id)
+        print('task_id:', task_id)
 
     for task_id in task_ids:
         res = sched.get_result(task_id, block=True)
